@@ -8,7 +8,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
 
     steps:
       - uses: actions/checkout@v4
@@ -16,50 +16,53 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 18
-          cache: npm
 
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
 
-      - uses: gradle/actions/setup-gradle@v3
-
       - uses: android-actions/setup-android@v3
         with:
           packages: 'ndk;26.1.10909125'
 
       - name: Set NDK env
-        run: echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/26.1.10909125" >> $GITHUB_ENV
+        run: |
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/26.1.10909125" >> $GITHUB_ENV
+          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/26.1.10909125" >> $GITHUB_ENV
 
-      - name: Install deps (npm ci)
-        run: npm ci --legacy-peer-deps
+      - name: Install dependencies
+        run: |
+          npm install --legacy-peer-deps --no-audit --no-fund
+          echo "✅ npm install done"
 
-      - name: Expo prebuild
-        run: npx expo prebuild --platform android --no-install
+      - name: Verify expo CLI
+        run: npx --no-install expo --version
 
-      - name: Build APK (arm64 only, fast)
+      - name: Expo prebuild Android
+        run: |
+          npx expo prebuild --platform android --no-install
+          echo "✅ prebuild done"
+          ls -la android/
+
+      - name: Build APK (arm64 only)
         working-directory: android
         run: |
           chmod +x gradlew
           ./gradlew assembleRelease \
             --no-daemon \
             --parallel \
-            --max-workers=4 \
             -x lint \
-            -Preact.internal.disableJavaVersionAlignment=true \
             -PreactNativeArchitectures=arm64-v8a
 
-      - name: Find APK
-        id: find_apk
-        run: |
-          APK=$(find android/app/build/outputs/apk/release -name "*.apk" | head -1)
-          echo "apk_path=$APK" >> $GITHUB_OUTPUT
-          ls -lh "$APK"
+      - name: Show APK info
+        if: always()
+        run: find android/app/build/outputs -name "*.apk" -exec ls -lh {} \; 2>/dev/null || echo "no APK"
 
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: 大便日誌-APK
+          name: poop-log-APK
           path: android/app/build/outputs/apk/release/*.apk
           retention-days: 90
