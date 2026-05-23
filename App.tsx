@@ -64,10 +64,12 @@ function Toggle({on,onChange}:{on:boolean;onChange:(v:boolean)=>void}) {
 // ─── Combined chart: bars (categories) + line (sizes), same X-axis ──
 // Matches the web version: left Y = score (0-3), right Y = size index (0-6)
 function CategoryChart({data}:{data:any[]}) {
+  const [sel, setSel] = useState<number|null>(null);
+
   if (!data || data.length<1) return <Text style={s.emptyChart}>需要至少 1 筆資料</Text>;
 
-  const cw = W - 56;           // card inner width
-  const h  = 175;              // chart height
+  const cw = W - 56;
+  const h  = 200;
   const padL = 36, padR = 36, padT = 8, padB = 22;
   const plotW = cw - padL - padR;
   const plotH = h - padT - padB;
@@ -75,61 +77,56 @@ function CategoryChart({data}:{data:any[]}) {
   const slot = plotW / n;
   const barW = Math.max(6, slot * 0.6);
 
-  // Y mappings
   const yScore = (v:number) => padT + (1 - v/3) * plotH;
   const ySize  = (v:number) => padT + (1 - v/6) * plotH;
 
-  // Points for size line
   const sizePts = data.map((d,i)=>{
     if (d.sIdx == null) return null;
     const x = padL + slot*i + slot/2;
     return { x, y: ySize(d.sIdx), hex: d.hex||BROWN, sIdx: d.sIdx };
   }).filter(Boolean) as any[];
 
-  // Path string for the line
   let pathD = '';
   sizePts.forEach((p,i)=>{ pathD += (i===0?'M':'L') + p.x + ',' + p.y + ' '; });
 
-  // Y axis ticks (left = score labels, right = size labels)
   const scoreTicks = [0,1,2,3];
   const sizeTicks  = [0,2,4,6];
-  const STICK_LBL = ['嚴重','中度','輕微','完美'];
-  const SIZE_LBL  = SIZES;
+  const STICK_LBL  = ['嚴重','中度','輕微','完美'];
+  const SIZE_LBL   = SIZES;
+
+  const selectedItem = sel!=null ? data[sel] : null;
+  const isDark = (hex:string) => DARK_HEX.includes(hex);
 
   return (
     <View>
       <Svg width={cw} height={h}>
-        {/* gridlines */}
         {scoreTicks.map(v => (
           <SvgLine key={'g'+v} x1={padL} y1={yScore(v)} x2={cw-padR} y2={yScore(v)}
             stroke="#f0ecea" strokeWidth={1} strokeDasharray="3,3"/>
         ))}
-        {/* perfect line (score=3) */}
-        <SvgLine x1={padL} y1={yScore(3)} x2={cw-padR} y2={yScore(3)}
-          stroke="#27ae60" strokeWidth={1.5} strokeDasharray="4,3"/>
-
-        {/* Left Y ticks */}
         {scoreTicks.map(v => (
           <SvgText key={'sy'+v} x={padL-4} y={yScore(v)+3} fontSize={9} fill="#aaa" textAnchor="end">
             {STICK_LBL[v]}
           </SvgText>
         ))}
-        {/* Right Y ticks */}
         {sizeTicks.map(v => (
           <SvgText key={'zy'+v} x={cw-padR+4} y={ySize(v)+3} fontSize={9} fill="#aaa" textAnchor="start">
             {SIZE_LBL[v]?SIZE_LBL[v].label:''}
           </SvgText>
         ))}
 
-        {/* Bars (score, colored by stool hex) */}
+        {/* Bars (colored by stool hex) */}
         {data.map((d,i)=>{
           const x = padL + slot*i + (slot-barW)/2;
           const y = yScore(d.score);
-          const bh = (plotH) - (y-padT);
-          if (bh <= 0) return null;
+          const bh = plotH - (y-padT);
+          const selectedRing = sel===i;
           return (
-            <Rect key={'b'+i} x={x} y={y} width={barW} height={bh}
-              rx={3} ry={3} fill={d.hex||BROWN}/>
+            <G key={'b'+i}>
+              <Rect x={x} y={y} width={barW} height={Math.max(bh,0)}
+                rx={3} ry={3} fill={d.hex||BROWN}
+                stroke={selectedRing?BROWN:'transparent'} strokeWidth={selectedRing?2:0}/>
+            </G>
           );
         })}
 
@@ -137,13 +134,12 @@ function CategoryChart({data}:{data:any[]}) {
         {sizePts.length>=2 && (
           <Path d={pathD} stroke="#e07820" strokeWidth={2} fill="none"/>
         )}
-        {/* Size dots (colored by stool hex) */}
         {sizePts.map((p,i)=>(
           <Circle key={'c'+i} cx={p.x} cy={p.y} r={4}
             fill={p.hex} stroke="#fff" strokeWidth={1.5}/>
         ))}
 
-        {/* X axis labels (first and last only to avoid crowding) */}
+        {/* First/last X labels */}
         {n>0 && (
           <SvgText x={padL + slot/2} y={h-6} fontSize={8} fill="#aaa" textAnchor="middle">
             {data[0].label}
@@ -156,7 +152,51 @@ function CategoryChart({data}:{data:any[]}) {
         )}
       </Svg>
 
-      {/* Legend matching the web version's chart sub */}
+      {/* Tap overlays — invisible touch targets per data point */}
+      <View style={{position:'absolute',left:0,top:0,width:cw,height:h,flexDirection:'row'}}
+        pointerEvents="box-none">
+        <View style={{width:padL}}/>
+        {data.map((d,i)=>(
+          <TouchableOpacity key={'t'+i} activeOpacity={0.6}
+            onPress={()=>setSel(sel===i?null:i)}
+            style={{width:slot,height:plotH,marginTop:padT}}/>
+        ))}
+      </View>
+
+      {/* Tap tooltip — shows category / size / color of tapped bar */}
+      {selectedItem && (
+        <View style={{marginTop:8,padding:10,backgroundColor:'#fdfaf8',borderRadius:10,borderWidth:1,borderColor:'#f0e8e3'}}>
+          <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
+            <Text style={{fontSize:12,fontWeight:'700',color:'#555'}}>{selectedItem.label}</Text>
+            <TouchableOpacity onPress={()=>setSel(null)}>
+              <Text style={{fontSize:14,color:'#bbb'}}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          {/* 分類 */}
+          <View style={{flexDirection:'row',alignItems:'center',gap:6,marginBottom:4}}>
+            <Text style={{fontSize:14}}>{BRISTOL.find(b=>b.status===selectedItem.typeLabel)?.emoji||'💩'}</Text>
+            <Text style={{fontSize:12,fontWeight:'700',color:'#333'}}>{selectedItem.typeLabel||'—'}</Text>
+            <View style={{backgroundColor:SC[selectedItem.score]||BROWN,borderRadius:8,paddingHorizontal:5}}>
+              <Text style={{color:'#fff',fontSize:10,fontWeight:'700'}}>{selectedItem.score}分</Text>
+            </View>
+            <Text style={{fontSize:11,color:'#888'}}>{ST[selectedItem.score]||''}</Text>
+          </View>
+          {/* 大小 */}
+          <View style={{flexDirection:'row',alignItems:'center',gap:6,marginBottom:4}}>
+            <Text style={{color:'#e07820'}}>📏</Text>
+            <Text style={{fontSize:12,color:'#e07820',fontWeight:'600'}}>
+              大小：{selectedItem.sIdx!=null?(SIZES[selectedItem.sIdx]?SIZES[selectedItem.sIdx].label:'—'):'—'}
+            </Text>
+          </View>
+          {/* 顏色 */}
+          <View style={{flexDirection:'row',alignItems:'center',gap:6}}>
+            <View style={{width:12,height:12,borderRadius:6,backgroundColor:selectedItem.hex||BROWN,borderWidth:1,borderColor:'#ccc'}}/>
+            <Text style={{fontSize:12,color:'#555'}}>{selectedItem.colorLabel||'—'}</Text>
+          </View>
+        </View>
+      )}
+
+      {/* Static legend */}
       <View style={{flexDirection:'row',flexWrap:'wrap',gap:8,marginTop:6,paddingHorizontal:4}}>
         <View style={{flexDirection:'row',alignItems:'center',gap:4}}>
           <View style={{width:10,height:10,borderRadius:2,backgroundColor:BROWN}}/>
@@ -169,10 +209,6 @@ function CategoryChart({data}:{data:any[]}) {
         <View style={{flexDirection:'row',alignItems:'center',gap:4}}>
           <View style={{width:10,height:10,borderRadius:5,backgroundColor:'#8B4513',borderWidth:1,borderColor:'#ccc'}}/>
           <Text style={{fontSize:10,color:'#666'}}>顏色 = 大便顏色</Text>
-        </View>
-        <View style={{flexDirection:'row',alignItems:'center',gap:4}}>
-          <View style={{width:10,height:1.5,backgroundColor:'#27ae60'}}/>
-          <Text style={{fontSize:10,color:'#666'}}>綠虛線 = 完美(3分)</Text>
         </View>
       </View>
     </View>
@@ -249,7 +285,7 @@ export default function App() {
     setEntries(next); await persist(next);
     setSelType(null); setSelColor(null); setSelSize(null); setNote(''); setDt(new Date());
     setToast(true); setTimeout(()=>setToast(false),2000);
-    if(settings.autoExport) exportData(next);
+    // 不再自動分享，需手動到「備份設定」按「立即匯出」
   };
 
   const del = async (id:number) => {
@@ -343,14 +379,14 @@ export default function App() {
                 </TouchableOpacity>
               </View>
               {dtMode==='date' && (
-                <DateTimePicker value={dt} mode="date" display="default"
+                <DateTimePicker value={dt} mode="date" display="spinner"
                   onChange={(_,d)=>{
                     if(d){ setDt(prev=>{const n=new Date(prev);n.setFullYear(d.getFullYear(),d.getMonth(),d.getDate());return n;}); setDtMode('time'); }
                     else setDtMode('none');
                   }}/>
               )}
               {dtMode==='time' && (
-                <DateTimePicker value={dt} mode="time" display="default" is24Hour={true}
+                <DateTimePicker value={dt} mode="time" display="spinner" is24Hour={true}
                   onChange={(_,d)=>{
                     setDtMode('none');
                     if(d){ setDt(prev=>{const n=new Date(prev);n.setHours(d.getHours(),d.getMinutes(),0,0);return n;}); }
@@ -504,14 +540,14 @@ export default function App() {
                             <Text style={{color:BROWN,fontWeight:'600'}}>{fmt(editDt.toISOString())}</Text>
                           </TouchableOpacity>
                           {editDtMode==='date' && (
-                            <DateTimePicker value={editDt} mode="date" display="default"
+                            <DateTimePicker value={editDt} mode="date" display="spinner"
                               onChange={(_,d)=>{
                                 if(d){ setEditDt(prev=>{const n=new Date(prev);n.setFullYear(d.getFullYear(),d.getMonth(),d.getDate());return n;}); setEditDtMode('time'); }
                                 else setEditDtMode('none');
                               }}/>
                           )}
                           {editDtMode==='time' && (
-                            <DateTimePicker value={editDt} mode="time" display="default" is24Hour={true}
+                            <DateTimePicker value={editDt} mode="time" display="spinner" is24Hour={true}
                               onChange={(_,d)=>{
                                 setEditDtMode('none');
                                 if(d){ setEditDt(prev=>{const n=new Date(prev);n.setHours(d.getHours(),d.getMinutes(),0,0);return n;}); }
@@ -584,7 +620,7 @@ export default function App() {
                 </TouchableOpacity>
               )}
               {showSelDate && (
-                <DateTimePicker value={selDate} mode="date" display="default"
+                <DateTimePicker value={selDate} mode="date" display="spinner"
                   onChange={(_,d)=>{setShowSelDate(false);if(d)setSelDate(d);}}/>
               )}
 
