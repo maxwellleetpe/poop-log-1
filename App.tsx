@@ -9,6 +9,7 @@ import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
 import * as DocumentPicker from 'expo-document-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import Svg, { Rect, Line as SvgLine, Path, Circle, Text as SvgText, G } from 'react-native-svg';
 import {
   BRISTOL, SC, ST, STICK, PCOLORS, SIZES,
   SZ_IDX, SZ_FS, BROWN, KEY, SKEY, ROW_H, DARK_HEX,
@@ -50,66 +51,100 @@ function Toggle({on,onChange}:{on:boolean;onChange:(v:boolean)=>void}) {
   );
 }
 
-// ─── Mini bar chart (SVG-based, no lib needed) ──────────────────
-function MiniBarChart({data,maxVal,getColor,getLabel}:{
-  data:{val:number|null,hex?:string,label:string}[];
-  maxVal:number; getColor:(d:any)=>string; getLabel:(v:number)=>string;
-}) {
-  const h=160; const barW=Math.max(8, Math.floor((W-80)/Math.max(data.length,1))-4);
-  return (
-    <View style={{height:h+30,flexDirection:'row',alignItems:'flex-end',paddingHorizontal:4}}>
-      {data.map((d,i)=>{
-        const val = d.val??0;
-        const barH = maxVal>0 ? Math.round((val/maxVal)*h) : 0;
-        const color = getColor(d);
-        return (
-          <View key={i} style={{alignItems:'center',marginHorizontal:2,width:barW}}>
-            <View style={{width:barW,height:barH,backgroundColor:color,borderRadius:3,borderTopLeftRadius:4,borderTopRightRadius:4}}/>
-            <Text style={{fontSize:7,color:'#aaa',marginTop:2}}>{d.label}</Text>
-          </View>
-        );
-      })}
-    </View>
-  );
-}
+// ─── Combined chart: bars (categories) + line (sizes), same X-axis ──
+// Matches the web version: left Y = score (0-3), right Y = size index (0-6)
+function CategoryChart({data}:{data:any[]}) {
+  if (!data || data.length<1) return <Text style={s.emptyChart}>需要至少 1 筆資料</Text>;
 
-// ─── Line chart (simple SVG path) ───────────────────────────────
-function MiniLineChart({data,maxVal,getColor}:{
-  data:{val:number|null,hex?:string,label:string}[];
-  maxVal:number; getColor:(d:any)=>string;
-}) {
-  const h=120; const cw=W-56;
-  const pts = data.map((d,i)=>{
-    const x = data.length<2 ? cw/2 : (i/(data.length-1))*cw;
-    const y = d.val!=null && maxVal>0 ? h - (d.val/maxVal)*h : null;
-    return {x,y,d};
-  }).filter(p=>p.y!=null) as {x:number,y:number,d:any}[];
-  if (pts.length<2) return <Text style={s.emptyChart}>需要至少 2 筆資料</Text>;
+  const cw = W - 56;           // card inner width
+  const h  = 175;              // chart height
+  const padL = 36, padR = 36, padT = 8, padB = 22;
+  const plotW = cw - padL - padR;
+  const plotH = h - padT - padB;
+  const n = data.length;
+  const slot = plotW / n;
+  const barW = Math.max(6, slot * 0.6);
+
+  // Y mappings
+  const yScore = (v:number) => padT + (1 - v/3) * plotH;
+  const ySize  = (v:number) => padT + (1 - v/6) * plotH;
+
+  // Points for size line
+  const sizePts = data.map((d,i)=>{
+    if (d.sIdx == null) return null;
+    const x = padL + slot*i + slot/2;
+    return { x, y: ySize(d.sIdx), hex: d.hex||BROWN, sIdx: d.sIdx };
+  }).filter(Boolean) as any[];
+
+  // Path string for the line
+  let pathD = '';
+  sizePts.forEach((p,i)=>{ pathD += (i===0?'M':'L') + p.x + ',' + p.y + ' '; });
+
+  // Y axis ticks (left = score labels, right = size labels)
+  const scoreTicks = [0,1,2,3];
+  const sizeTicks  = [0,2,4,6];
+  const STICK_LBL = ['嚴重','中度','輕微','完美'];
+  const SIZE_LBL  = SIZES;
+
   return (
-    <View style={{height:h+20}}>
-      <View style={{position:'absolute',top:0,left:0,width:cw,height:h}}>
-        {pts.map((p,i)=>{
-          if(i===0) return null;
-          const prev=pts[i-1];
-          const dx=p.x-prev.x; const dy=p.y-prev.y;
-          const len=Math.sqrt(dx*dx+dy*dy);
-          const angle=Math.atan2(dy,dx)*(180/Math.PI);
+    <View>
+      <Svg width={cw} height={h}>
+        {/* gridlines */}
+        {scoreTicks.map(v => (
+          <SvgLine key={'g'+v} x1={padL} y1={yScore(v)} x2={cw-padR} y2={yScore(v)}
+            stroke="#f0ecea" strokeWidth={1} strokeDasharray="3,3"/>
+        ))}
+        {/* perfect line (score=3) */}
+        <SvgLine x1={padL} y1={yScore(3)} x2={cw-padR} y2={yScore(3)}
+          stroke="#27ae60" strokeWidth={1.5} strokeDasharray="4,3"/>
+
+        {/* Left Y ticks */}
+        {scoreTicks.map(v => (
+          <SvgText key={'sy'+v} x={padL-4} y={yScore(v)+3} fontSize={9} fill="#aaa" textAnchor="end">
+            {STICK_LBL[v]}
+          </SvgText>
+        ))}
+        {/* Right Y ticks */}
+        {sizeTicks.map(v => (
+          <SvgText key={'zy'+v} x={cw-padR+4} y={ySize(v)+3} fontSize={9} fill="#aaa" textAnchor="start">
+            {SIZE_LBL[v]?SIZE_LBL[v].label:''}
+          </SvgText>
+        ))}
+
+        {/* Bars (score, colored by stool hex) */}
+        {data.map((d,i)=>{
+          const x = padL + slot*i + (slot-barW)/2;
+          const y = yScore(d.score);
+          const bh = (plotH) - (y-padT);
+          if (bh <= 0) return null;
           return (
-            <View key={i} style={{position:'absolute',left:prev.x,top:prev.y,
-              width:len,height:2,backgroundColor:'#e07820',
-              transform:[{rotate:`${angle}deg`},{translateY:-1}],transformOrigin:'left center'}}/>
+            <Rect key={'b'+i} x={x} y={y} width={barW} height={bh}
+              rx={3} ry={3} fill={d.hex||BROWN}/>
           );
         })}
-        {pts.map((p,i)=>(
-          <View key={i} style={{position:'absolute',left:p.x-5,top:p.y-5,
-            width:10,height:10,borderRadius:5,backgroundColor:getColor(p.d),
-            borderWidth:2,borderColor:'#fff'}}/>
+
+        {/* Size line */}
+        {sizePts.length>=2 && (
+          <Path d={pathD} stroke="#e07820" strokeWidth={2} fill="none"/>
+        )}
+        {/* Size dots (colored by stool hex) */}
+        {sizePts.map((p,i)=>(
+          <Circle key={'c'+i} cx={p.x} cy={p.y} r={4}
+            fill={p.hex} stroke="#fff" strokeWidth={1.5}/>
         ))}
-      </View>
-      <View style={{position:'absolute',bottom:0,left:0,width:cw,flexDirection:'row',justifyContent:'space-between'}}>
-        <Text style={{fontSize:7,color:'#aaa'}}>{pts[0].d.label}</Text>
-        <Text style={{fontSize:7,color:'#aaa'}}>{pts[pts.length-1].d.label}</Text>
-      </View>
+
+        {/* X axis labels (first and last only to avoid crowding) */}
+        {n>0 && (
+          <SvgText x={padL + slot/2} y={h-6} fontSize={8} fill="#aaa" textAnchor="middle">
+            {data[0].label}
+          </SvgText>
+        )}
+        {n>1 && (
+          <SvgText x={padL + slot*(n-1) + slot/2} y={h-6} fontSize={8} fill="#aaa" textAnchor="middle">
+            {data[n-1].label}
+          </SvgText>
+        )}
+      </Svg>
     </View>
   );
 }
@@ -123,13 +158,14 @@ export default function App() {
   const [selSize,  setSelSize]  = useState<string|null>(null);
   const [note,     setNote]     = useState('');
   const [dt,       setDt]       = useState(new Date());
-  const [showDt,   setShowDt]   = useState(false);
+
   const [toast,    setToast]    = useState(false);
   const [editId,   setEditId]   = useState<number|null>(null);
   const [editDt,   setEditDt]   = useState(new Date());
   const [editSz,   setEditSz]   = useState<string|null>(null);
   const [editCol,  setEditCol]  = useState<string|null>(null);
-  const [showEditDt, setShowEditDt] = useState(false);
+  const [editDtMode, setEditDtMode] = useState<'none'|'date'|'time'>('none');
+  const [dtMode, setDtMode] = useState<'none'|'date'|'time'>('none');
   const [confirmClear, setConfirmClear] = useState(false);
   const [period,   setPeriod]   = useState<'all'|'week'|'day'|'date'>('all');
   const [selDate,  setSelDate]  = useState(new Date());
@@ -263,7 +299,7 @@ export default function App() {
             <View>
               {/* 日期時間 + 儲存按鈕 */}
               <View style={{flexDirection:'row',gap:8,marginBottom:12}}>
-                <TouchableOpacity onPress={()=>setShowDt(true)} style={[s.card,{flex:1,marginBottom:0}]}>
+                <TouchableOpacity onPress={()=>setDtMode('date')} style={[s.card,{flex:1,marginBottom:0}]}>
                   <Text style={{fontSize:10,color:'#aaa',marginBottom:2}}>📅 日期與時間</Text>
                   <Text style={{fontSize:13,color:'#333',fontWeight:'600'}}>
                     {fmt(dt.toISOString())}
@@ -276,9 +312,19 @@ export default function App() {
                   <Text style={{color:'#fff',fontSize:11,fontWeight:'800'}}>儲存</Text>
                 </TouchableOpacity>
               </View>
-              {showDt && (
-                <DateTimePicker value={dt} mode="datetime" display="default"
-                  onChange={(_,d)=>{setShowDt(false);if(d)setDt(d);}}/>
+              {dtMode==='date' && (
+                <DateTimePicker value={dt} mode="date" display="default"
+                  onChange={(_,d)=>{
+                    if(d){ setDt(prev=>{const n=new Date(prev);n.setFullYear(d.getFullYear(),d.getMonth(),d.getDate());return n;}); setDtMode('time'); }
+                    else setDtMode('none');
+                  }}/>
+              )}
+              {dtMode==='time' && (
+                <DateTimePicker value={dt} mode="time" display="default" is24Hour={true}
+                  onChange={(_,d)=>{
+                    setDtMode('none');
+                    if(d){ setDt(prev=>{const n=new Date(prev);n.setHours(d.getHours(),d.getMinutes(),0,0);return n;}); }
+                  }}/>
               )}
 
               <Card title="分類 · 大小 · 顏色" sub="分類和顏色必填">
@@ -424,12 +470,22 @@ export default function App() {
                       {isEd && (
                         <View style={s.editBox}>
                           <Text style={s.editLabel}>⏰ 時間</Text>
-                          <TouchableOpacity onPress={()=>setShowEditDt(true)} style={s.editDateBtn}>
+                          <TouchableOpacity onPress={()=>setEditDtMode('date')} style={s.editDateBtn}>
                             <Text style={{color:BROWN,fontWeight:'600'}}>{fmt(editDt.toISOString())}</Text>
                           </TouchableOpacity>
-                          {showEditDt && (
-                            <DateTimePicker value={editDt} mode="datetime" display="default"
-                              onChange={(_,d)=>{setShowEditDt(false);if(d)setEditDt(d);}}/>
+                          {editDtMode==='date' && (
+                            <DateTimePicker value={editDt} mode="date" display="default"
+                              onChange={(_,d)=>{
+                                if(d){ setEditDt(prev=>{const n=new Date(prev);n.setFullYear(d.getFullYear(),d.getMonth(),d.getDate());return n;}); setEditDtMode('time'); }
+                                else setEditDtMode('none');
+                              }}/>
+                          )}
+                          {editDtMode==='time' && (
+                            <DateTimePicker value={editDt} mode="time" display="default" is24Hour={true}
+                              onChange={(_,d)=>{
+                                setEditDtMode('none');
+                                if(d){ setEditDt(prev=>{const n=new Date(prev);n.setHours(d.getHours(),d.getMinutes(),0,0);return n;}); }
+                              }}/>
                           )}
                           <Text style={[s.editLabel,{marginTop:8}]}>📏 大小</Text>
                           <View style={{flexDirection:'row',flexWrap:'wrap',gap:6,marginTop:4}}>
@@ -515,23 +571,8 @@ export default function App() {
               </View>
 
               {/* 分類趨勢 */}
-              <Card title="📈 分類趨勢" sub="左=分類分數(3完美) | 顏色=大便顏色 | 右曲線=大小">
-                <MiniBarChart
-                  data={scoreData.map(d=>({label:d.label,val:d.val,hex:d.hex}))}
-                  maxVal={3}
-                  getColor={d=>d.hex||BROWN}
-                  getLabel={v=>STICK[v]??''}
-                />
-                {sizeData.length>=2 && (
-                  <View style={{marginTop:8}}>
-                    <Text style={{fontSize:10,color:'#aaa',marginBottom:4}}>大小趨勢</Text>
-                    <MiniLineChart
-                      data={sizeData}
-                      maxVal={6}
-                      getColor={d=>d.hex||BROWN}
-                    />
-                  </View>
-                )}
+              <Card title="📈 分類趨勢" sub="左長條高度=分類分數 | 顏色=大便顏色 | 右曲線=大小">
+                <CategoryChart data={scoreData}/>
               </Card>
 
               {/* 分類分佈 */}
