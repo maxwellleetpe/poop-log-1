@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "💩 大便日誌",
+    "slug": "poop-log",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#6B3A2A"
+    },
+    "android": {
+      "package": "com.pooplog.app",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#6B3A2A"
+      }
+    },
+    "plugins": [
+      "@react-native-async-storage/async-storage",
+      "@react-native-community/datetimepicker"
+    ]
+  }
+}
