@@ -26,9 +26,19 @@ const bi = (t:number) => BRISTOL.find(b=>b.type===t);
 const ci = (id:string) => PCOLORS.find(c=>c.id===id);
 const fmt = (iso:string) => {
   const d=new Date(iso);
-  return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  // Match original web version: zh-TW locale, M/D 上午/下午HH:MM
+  try {
+    return d.toLocaleDateString("zh-TW",{month:"numeric",day:"numeric"})+" "
+         + d.toLocaleTimeString("zh-TW",{hour:"2-digit",minute:"2-digit"});
+  } catch {
+    return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  }
 };
-const fmtS = (iso:string) => { const d=new Date(iso); return `${d.getMonth()+1}/${d.getDate()}`; };
+const fmtS = (iso:string) => {
+  const d=new Date(iso);
+  try { return d.toLocaleDateString("zh-TW",{month:"numeric",day:"numeric"}); }
+  catch { return `${d.getMonth()+1}/${d.getDate()}`; }
+};
 
 // ─── Card ────────────────────────────────────────────────────────
 function Card({title,sub,children}:{title:string;sub?:string;children:React.ReactNode}) {
@@ -145,6 +155,26 @@ function CategoryChart({data}:{data:any[]}) {
           </SvgText>
         )}
       </Svg>
+
+      {/* Legend matching the web version's chart sub */}
+      <View style={{flexDirection:'row',flexWrap:'wrap',gap:8,marginTop:6,paddingHorizontal:4}}>
+        <View style={{flexDirection:'row',alignItems:'center',gap:4}}>
+          <View style={{width:10,height:10,borderRadius:2,backgroundColor:BROWN}}/>
+          <Text style={{fontSize:10,color:'#666'}}>左長條 = 分類分數</Text>
+        </View>
+        <View style={{flexDirection:'row',alignItems:'center',gap:4}}>
+          <View style={{width:10,height:2,backgroundColor:'#e07820'}}/>
+          <Text style={{fontSize:10,color:'#666'}}>右曲線 = 大小</Text>
+        </View>
+        <View style={{flexDirection:'row',alignItems:'center',gap:4}}>
+          <View style={{width:10,height:10,borderRadius:5,backgroundColor:'#8B4513',borderWidth:1,borderColor:'#ccc'}}/>
+          <Text style={{fontSize:10,color:'#666'}}>顏色 = 大便顏色</Text>
+        </View>
+        <View style={{flexDirection:'row',alignItems:'center',gap:4}}>
+          <View style={{width:10,height:1.5,backgroundColor:'#27ae60'}}/>
+          <Text style={{fontSize:10,color:'#666'}}>綠虛線 = 完美(3分)</Text>
+        </View>
+      </View>
     </View>
   );
 }
@@ -255,7 +285,7 @@ export default function App() {
 
   const scoreData = recent.map(e=>({
     label: fmtS(e.ts),
-    val:   bi(e.t)?.score??0,
+    score: bi(e.t)?.score??0,
     hex:   ci(e.c)?.hex??BROWN,
     sIdx:  e.sz&&SZ_IDX[e.sz]!=null ? SZ_IDX[e.sz] : null,
     typeLabel: bi(e.t)?.status??'',
