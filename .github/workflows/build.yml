@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -32,37 +35,43 @@ jobs:
           echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/26.1.10909125" >> $GITHUB_ENV
 
       - name: Install dependencies
-        run: |
-          npm install --legacy-peer-deps --no-audit --no-fund
-          echo "✅ npm install done"
+        run: npm install --legacy-peer-deps --no-audit --no-fund
 
-      - name: Verify expo CLI
-        run: npx --no-install expo --version
+      - name: Expo prebuild
+        run: npx expo prebuild --platform android --no-install
 
-      - name: Expo prebuild Android
-        run: |
-          npx expo prebuild --platform android --no-install
-          echo "✅ prebuild done"
-          ls -la android/
-
-      - name: Build APK (arm64 only)
+      - name: Build APK
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease \
-            --no-daemon \
-            --parallel \
-            -x lint \
-            -PreactNativeArchitectures=arm64-v8a
+          ./gradlew assembleRelease --no-daemon --parallel -x lint -PreactNativeArchitectures=arm64-v8a
 
-      - name: Show APK info
-        if: always()
-        run: find android/app/build/outputs -name "*.apk" -exec ls -lh {} \; 2>/dev/null || echo "no APK"
+      - name: Rename APK
+        run: |
+          mkdir -p out
+          cp android/app/build/outputs/apk/release/*.apk out/poop-log.apk
+          ls -lh out/
 
-      - name: Upload APK
-        if: success()
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: poop-log-APK
-          path: android/app/build/outputs/apk/release/*.apk
+          path: out/poop-log.apk
           retention-days: 90
+
+      - name: Create or update Release (latest)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: 大便日誌 (latest build)
+          body: |
+            自動 build 的 Android APK
+            
+            **下載**：點下方 `poop-log.apk`
+            
+            **安裝**：
+            1. 傳到 Android 手機
+            2. 設定 → 安全性 → 允許未知來源安裝
+            3. 點 APK 安裝
+          files: out/poop-log.apk
+          make_latest: true
