@@ -77,17 +77,19 @@ function CategoryChart({data}:{data:any[]}) {
   const slot = plotW / n;
   const barW = Math.max(6, slot * 0.6);
 
-  const yScore = (v:number) => padT + (1 - v/3) * plotH;
-  const ySize  = (v:number) => padT + (1 - v/6) * plotH;
+  // SWAPPED: left Y = score (curve), right Y = size (bar)
+  const yScore = (v:number) => padT + (1 - v/3) * plotH;   // left axis
+  const ySize  = (v:number) => padT + (1 - v/6) * plotH;   // right axis
 
-  const sizePts = data.map((d,i)=>{
-    if (d.sIdx == null) return null;
+  // Points for score line (curve on LEFT axis)
+  const scorePts = data.map((d,i)=>{
+    if (d.score == null) return null;
     const x = padL + slot*i + slot/2;
-    return { x, y: ySize(d.sIdx), hex: d.hex||BROWN, sIdx: d.sIdx };
+    return { x, y: yScore(d.score), hex: d.hex||BROWN, score: d.score };
   }).filter(Boolean) as any[];
 
   let pathD = '';
-  sizePts.forEach((p,i)=>{ pathD += (i===0?'M':'L') + p.x + ',' + p.y + ' '; });
+  scorePts.forEach((p,i)=>{ pathD += (i===0?'M':'L') + p.x + ',' + p.y + ' '; });
 
   const scoreTicks = [0,1,2,3];
   const sizeTicks  = [0,2,4,6];
@@ -95,46 +97,47 @@ function CategoryChart({data}:{data:any[]}) {
   const SIZE_LBL   = SIZES;
 
   const selectedItem = sel!=null ? data[sel] : null;
-  const isDark = (hex:string) => DARK_HEX.includes(hex);
 
   return (
     <View>
       <Svg width={cw} height={h}>
+        {/* gridlines based on left axis */}
         {scoreTicks.map(v => (
           <SvgLine key={'g'+v} x1={padL} y1={yScore(v)} x2={cw-padR} y2={yScore(v)}
             stroke="#f0ecea" strokeWidth={1} strokeDasharray="3,3"/>
         ))}
+        {/* Left Y ticks = score labels */}
         {scoreTicks.map(v => (
           <SvgText key={'sy'+v} x={padL-4} y={yScore(v)+3} fontSize={9} fill="#aaa" textAnchor="end">
             {STICK_LBL[v]}
           </SvgText>
         ))}
+        {/* Right Y ticks = size labels */}
         {sizeTicks.map(v => (
           <SvgText key={'zy'+v} x={cw-padR+4} y={ySize(v)+3} fontSize={9} fill="#aaa" textAnchor="start">
             {SIZE_LBL[v]?SIZE_LBL[v].label:''}
           </SvgText>
         ))}
 
-        {/* Bars (colored by stool hex) */}
+        {/* Bars = size, on RIGHT axis, colored by stool hex */}
         {data.map((d,i)=>{
+          if (d.sIdx == null) return null;
           const x = padL + slot*i + (slot-barW)/2;
-          const y = yScore(d.score);
+          const y = ySize(d.sIdx);
           const bh = plotH - (y-padT);
           const selectedRing = sel===i;
           return (
-            <G key={'b'+i}>
-              <Rect x={x} y={y} width={barW} height={Math.max(bh,0)}
-                rx={3} ry={3} fill={d.hex||BROWN}
-                stroke={selectedRing?BROWN:'transparent'} strokeWidth={selectedRing?2:0}/>
-            </G>
+            <Rect key={'b'+i} x={x} y={y} width={barW} height={Math.max(bh,0)}
+              rx={3} ry={3} fill={d.hex||BROWN}
+              stroke={selectedRing?BROWN:'transparent'} strokeWidth={selectedRing?2:0}/>
           );
         })}
 
-        {/* Size line */}
-        {sizePts.length>=2 && (
-          <Path d={pathD} stroke="#e07820" strokeWidth={2} fill="none"/>
+        {/* Score line on LEFT axis, brown */}
+        {scorePts.length>=2 && (
+          <Path d={pathD} stroke={BROWN} strokeWidth={2} fill="none"/>
         )}
-        {sizePts.map((p,i)=>(
+        {scorePts.map((p,i)=>(
           <Circle key={'c'+i} cx={p.x} cy={p.y} r={4}
             fill={p.hex} stroke="#fff" strokeWidth={1.5}/>
         ))}
@@ -152,7 +155,7 @@ function CategoryChart({data}:{data:any[]}) {
         )}
       </Svg>
 
-      {/* Tap overlays — invisible touch targets per data point */}
+      {/* Tap overlays */}
       <View style={{position:'absolute',left:0,top:0,width:cw,height:h,flexDirection:'row'}}
         pointerEvents="box-none">
         <View style={{width:padL}}/>
@@ -163,7 +166,7 @@ function CategoryChart({data}:{data:any[]}) {
         ))}
       </View>
 
-      {/* Tap tooltip — shows category / size / color of tapped bar */}
+      {/* Tap tooltip */}
       {selectedItem && (
         <View style={{marginTop:8,padding:10,backgroundColor:'#fdfaf8',borderRadius:10,borderWidth:1,borderColor:'#f0e8e3'}}>
           <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
@@ -172,7 +175,6 @@ function CategoryChart({data}:{data:any[]}) {
               <Text style={{fontSize:14,color:'#bbb'}}>✕</Text>
             </TouchableOpacity>
           </View>
-          {/* 分類 */}
           <View style={{flexDirection:'row',alignItems:'center',gap:6,marginBottom:4}}>
             <Text style={{fontSize:14}}>{BRISTOL.find(b=>b.status===selectedItem.typeLabel)?.emoji||'💩'}</Text>
             <Text style={{fontSize:12,fontWeight:'700',color:'#333'}}>{selectedItem.typeLabel||'—'}</Text>
@@ -181,14 +183,12 @@ function CategoryChart({data}:{data:any[]}) {
             </View>
             <Text style={{fontSize:11,color:'#888'}}>{ST[selectedItem.score]||''}</Text>
           </View>
-          {/* 大小 */}
           <View style={{flexDirection:'row',alignItems:'center',gap:6,marginBottom:4}}>
             <Text style={{color:'#e07820'}}>📏</Text>
             <Text style={{fontSize:12,color:'#e07820',fontWeight:'600'}}>
               大小：{selectedItem.sIdx!=null?(SIZES[selectedItem.sIdx]?SIZES[selectedItem.sIdx].label:'—'):'—'}
             </Text>
           </View>
-          {/* 顏色 */}
           <View style={{flexDirection:'row',alignItems:'center',gap:6}}>
             <View style={{width:12,height:12,borderRadius:6,backgroundColor:selectedItem.hex||BROWN,borderWidth:1,borderColor:'#ccc'}}/>
             <Text style={{fontSize:12,color:'#555'}}>{selectedItem.colorLabel||'—'}</Text>
@@ -200,11 +200,11 @@ function CategoryChart({data}:{data:any[]}) {
       <View style={{flexDirection:'row',flexWrap:'wrap',gap:8,marginTop:6,paddingHorizontal:4}}>
         <View style={{flexDirection:'row',alignItems:'center',gap:4}}>
           <View style={{width:10,height:10,borderRadius:2,backgroundColor:BROWN}}/>
-          <Text style={{fontSize:10,color:'#666'}}>左長條 = 分類分數</Text>
+          <Text style={{fontSize:10,color:'#666'}}>右長條 = 大小</Text>
         </View>
         <View style={{flexDirection:'row',alignItems:'center',gap:4}}>
-          <View style={{width:10,height:2,backgroundColor:'#e07820'}}/>
-          <Text style={{fontSize:10,color:'#666'}}>右曲線 = 大小</Text>
+          <View style={{width:10,height:2,backgroundColor:BROWN}}/>
+          <Text style={{fontSize:10,color:'#666'}}>左曲線 = 分類分數</Text>
         </View>
         <View style={{flexDirection:'row',alignItems:'center',gap:4}}>
           <View style={{width:10,height:10,borderRadius:5,backgroundColor:'#8B4513',borderWidth:1,borderColor:'#ccc'}}/>
@@ -230,6 +230,7 @@ export default function App() {
   const [editDt,   setEditDt]   = useState(new Date());
   const [editSz,   setEditSz]   = useState<string|null>(null);
   const [editCol,  setEditCol]  = useState<string|null>(null);
+  const [editType, setEditType] = useState<number|null>(null);
   const [editDtMode, setEditDtMode] = useState<'none'|'date'|'time'>('none');
   const [dtMode, setDtMode] = useState<'none'|'date'|'time'>('none');
   const [confirmClear, setConfirmClear] = useState(false);
@@ -292,10 +293,10 @@ export default function App() {
     const n=entries.filter(e=>e.id!==id); setEntries(n); await persist(n);
   };
   const startEdit = (e:Entry) => {
-    setEditId(e.id); setEditDt(new Date(e.ts)); setEditSz(e.sz||null); setEditCol(e.c||null);
+    setEditId(e.id); setEditDt(new Date(e.ts)); setEditSz(e.sz||null); setEditCol(e.c||null); setEditType(e.t||null);
   };
   const saveEdit = async (id:number) => {
-    const n=entries.map(e=>e.id===id?{...e,ts:editDt.toISOString(),sz:editSz,c:editCol}:e)
+    const n=entries.map(e=>e.id===id?{...e,ts:editDt.toISOString(),sz:editSz,c:editCol,t:editType??e.t}:e)
       .sort((a,b)=>new Date(b.ts).getTime()-new Date(a.ts).getTime());
     setEntries(n); await persist(n); setEditId(null);
   };
@@ -553,6 +554,16 @@ export default function App() {
                                 if(d){ setEditDt(prev=>{const n=new Date(prev);n.setHours(d.getHours(),d.getMinutes(),0,0);return n;}); }
                               }}/>
                           )}
+                          <Text style={[s.editLabel,{marginTop:8}]}>💩 分類</Text>
+                          <View style={{flexDirection:'row',flexWrap:'wrap',gap:6,marginTop:4}}>
+                            {BRISTOL.map(bb=>(
+                              <TouchableOpacity key={bb.type} onPress={()=>setEditType(bb.type)}
+                                style={[s.editChip,{borderColor:editType===bb.type?BROWN:'#eee',backgroundColor:editType===bb.type?'#fdf1ea':'#fff',flexDirection:'row',gap:5,borderLeftWidth:4,borderLeftColor:bb.sc}]}>
+                                <Text style={{fontSize:13}}>{bb.emoji}</Text>
+                                <Text style={{fontSize:11,fontWeight:editType===bb.type?'700':'400',color:bb.sc}}>{bb.status}</Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
                           <Text style={[s.editLabel,{marginTop:8}]}>📏 大小</Text>
                           <View style={{flexDirection:'row',flexWrap:'wrap',gap:6,marginTop:4}}>
                             {SIZES.map(sz=>(
@@ -637,7 +648,7 @@ export default function App() {
               </View>
 
               {/* 分類趨勢 */}
-              <Card title="📈 分類趨勢" sub="左長條高度=分類分數 | 顏色=大便顏色 | 右曲線=大小">
+              <Card title="📈 分類趨勢" sub="右長條高度=大小 | 左曲線=分類分數 | 顏色=大便顏色">
                 <CategoryChart data={scoreData}/>
               </Card>
 
