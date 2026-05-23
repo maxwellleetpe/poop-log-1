@@ -8,75 +8,65 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node 18
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      - name: Setup Java 17
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
 
-      - name: Setup Android SDK
+      - name: Install Android SDK + NDK 26.1
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'ndk;26.1.10909125 cmake;3.22.1'
 
-      - name: Install dependencies
-        run: |
-          npm install --legacy-peer-deps
-          ls -la node_modules/.bin/ | head -20
+      - name: Set ANDROID_NDK_HOME
+        run: echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/26.1.10909125" >> $GITHUB_ENV
 
-      - name: Run Expo prebuild
+      - name: Install npm dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Expo prebuild
         run: npx expo prebuild --platform android --clean --no-install
         env:
           EXPO_NO_TELEMETRY: 1
 
-      - name: Verify android folder
-        run: |
-          ls -la android/
-          ls -la android/app/
-
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
-      - name: Print versions
+      - name: Build Release APK
         working-directory: android
-        run: |
-          ./gradlew --version
-          java -version
-
-      - name: Assemble Release APK
-        working-directory: android
-        run: ./gradlew assembleRelease --no-daemon --stacktrace -x lint
+        run: ./gradlew assembleRelease --no-daemon --stacktrace -x lint --warning-mode=summary
         env:
           ORG_GRADLE_PROJECT_reactNativeArchitectures: arm64-v8a,armeabi-v7a
 
-      - name: List build outputs
+      - name: List APK output
         if: always()
-        run: find android/app/build/outputs -name "*.apk" 2>/dev/null || echo "no APK found"
+        run: |
+          echo "=== APK files ==="
+          find . -name "*.apk" 2>/dev/null || echo "(no APK)"
 
       - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: poop-log-apk
+          name: 大便日誌-APK
           path: android/app/build/outputs/apk/release/*.apk
           retention-days: 90
 
-      - name: Upload build logs on failure
+      - name: Upload build reports on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: build-logs
+          name: build-failure-logs
           path: |
             android/app/build/reports/
             android/build/reports/
-          retention-days: 7
           if-no-files-found: ignore
